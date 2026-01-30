@@ -1,0 +1,6 @@
+[build]
+target = "avr-atmega4809.json"
+rustflags = ["-C", "target-cpu=atmega4809"] # Add CPU flag globally or specific to target
+
+[unstable]
+build-std = ["core"]

@@ -1,0 +1,24 @@
+{
+	"arch": "avr",
+	"atomic-cas": false,
+	"cpu": "atmega4809",
+	"data-layout": "e-P1-p:16:8-i8:8-i16:8-i32:8-i64:8-f32:8-f64:8-n8:16-a:8",
+	"env": "",
+	"exe-suffix": ".elf",
+	"executables": true,
+	"linker": "avr-gcc",
+	"linker-flavor": "gnu-cc",
+	"llvm-target": "avr-unknown-unknown",
+	"max-atomic-width": 16,
+	"os": "none",
+	"position-independent-executables": false,
+	"pre-link-args": {
+		"gnu-cc": [
+			"-mmcu=atmega4809"
+		]
+	},
+	"target-c-int-width": 16,
+	"target-endian": "little",
+	"target-pointer-width": 16,
+	"vendor": "unknown"
+}

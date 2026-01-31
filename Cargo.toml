@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "firmware",
     "host",
 ]
 resolver = "2"

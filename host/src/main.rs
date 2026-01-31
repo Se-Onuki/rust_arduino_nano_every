@@ -1,171 +1,112 @@
+use ahrs::{Ahrs, Madgwick};
 use kiss3d::light::Light;
 use kiss3d::window::Window;
-use nalgebra::{Translation3, UnitQuaternion, Vector3};
-use serialport::SerialPort;
+use nalgebra::Vector3; // 0.32 for ahrs
 use std::io::{BufRead, BufReader};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, TryRecvError};
 use std::thread;
-use std::time::{Duration, Instant};
-
-// Sensor calibration constants (Example values, user needs to calibrate)
-const ACCEL_SCALE: f64 = 1.0; // Raw to G? No, raw to m/s^2?
-                              // Madgwick expects rad/s for gyro and m/s^2 or normalized for accel.
-                              // If valid MAG, use AHRS.
-
-struct SensorData {
-    ax: f64,
-    ay: f64,
-    az: f64,
-    gx: f64,
-    gy: f64,
-    gz: f64,
-    mx: f64,
-    my: f64,
-    mz: f64,
-}
+use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
-    // Shared rotation quaternion
-    let rotation = Arc::new(Mutex::new(UnitQuaternion::identity()));
-    let rotation_clone = rotation.clone();
+    // Find a serial port
+    let ports = serialport::available_ports().expect("No ports found!");
+    if ports.is_empty() {
+        eprintln!("No serial ports found.");
+        return Ok(());
+    }
 
-    // Serial Thread
+    // Use the first available port
+    let port_name = &ports[0].port_name;
+    println!("Using serial port: {}", port_name);
+
+    let port = serialport::new(port_name, 115200)
+        .timeout(Duration::from_millis(1000))
+        .open()?;
+
+    // Use f32 for compatibility with kiss3d
+    let (tx, rx) = channel::<[f32; 6]>();
+
+    // Serial reading thread
     thread::spawn(move || {
-        let ports = serialport::available_ports().expect("No ports found!");
-        // Auto-detect or asking user is better, but here we pick the last one (often the plugged device)
-        // or filtering by USB VID/PID if known.
-        // For now, print ports and pick first that looks like Arduino (COM loop maybe?)
-        // Hardcoded or simple logic:
-        let port_name = if let Some(port) = ports.first() {
-            port.port_name.clone()
-        } else {
-            eprintln!("No serial ports found.");
-            return;
-        };
-
-        println!("Opening port: {}", port_name);
-
-        // Wait loop for connection
-        let mut port = match serialport::new(&port_name, 115200)
-            .timeout(Duration::from_millis(1000))
-            .open()
-        {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Failed to open port: {}", e);
-                return;
-            }
-        };
-
         let mut reader = BufReader::new(port);
-        let mut line_buf = String::new();
-
-        let mut madgwick = ahrs::Madgwick::new(0.01, 0.1); // sample_period, beta
-                                                           // sample_period should match firmware loop (10ms = 0.01s)
+        let mut line = String::new();
 
         loop {
-            line_buf.clear();
-            if let Ok(bytes) = reader.read_line(&mut line_buf) {
-                if bytes > 0 {
-                    let line = line_buf.trim();
-                    if let Some(data) = parse_line(line) {
-                        // Update AHRS
-                        // Convert raw to units.
-                        // ICM20600 default: ±16G (2048 LSB/g), ±2000dps (16.4 LSB/dps)
-                        // But I didn't set scale in firmware, defaults are usually ±2g and ±250dps on reset?
-                        // I set PWR_MGMT_1 reset = 0x80, then 0x01.
-                        // Need to check default scales. Usually:
-                        // Accel: ±2g -> 16384 LSB/g
-                        // Gyro: ±250dps -> 131 LSB/dps
-
-                        // Let's assume defaults for now.
-                        let ascale = 16384.0;
-                        let gscale = 131.0;
-
-                        let ax = data.ax / ascale;
-                        let ay = data.ay / ascale;
-                        let az = data.az / ascale;
-
-                        let gx = (data.gx / gscale).to_radians();
-                        let gy = (data.gy / gscale).to_radians();
-                        let gz = (data.gz / gscale).to_radians();
-
-                        // Mag: AK09918 is 0.15 uT/LSB ?
-                        let mx = data.mx;
-                        let my = data.my;
-                        let mz = data.mz;
-
-                        // Madgwick update
-                        // Input: Gyro (rad/s), Accel (any unit as long as consistent), Mag (any unit)
-                        match madgwick.update(
-                            &Vector3::new(gx, gy, gz),
-                            &Vector3::new(ax, ay, az),
-                            &Vector3::new(mx, my, mz),
-                        ) {
-                            Ok(quat) => {
-                                let mut rot = rotation_clone.lock().unwrap();
-                                *rot = *quat;
-                            }
-                            Err(e) => eprintln!("AHRS Error: {:?}", e),
-                        }
+            line.clear();
+            if let Ok(bytes) = reader.read_line(&mut line) {
+                if bytes == 0 {
+                    continue;
+                }
+                let line = line.trim();
+                let parts: Vec<&str> = line.split(',').collect();
+                if parts.len() == 6 {
+                    if let (Ok(ax), Ok(ay), Ok(az), Ok(gx), Ok(gy), Ok(gz)) = (
+                        parts[0].parse::<f32>(),
+                        parts[1].parse::<f32>(),
+                        parts[2].parse::<f32>(),
+                        parts[3].parse::<f32>(),
+                        parts[4].parse::<f32>(),
+                        parts[5].parse::<f32>(),
+                    ) {
+                        let _ = tx.send([ax, ay, az, gx, gy, gz]);
                     }
                 }
             }
         }
     });
 
-    // Kiss3d Window
-    let mut window = Window::new("Arduino Nano Every - 9DOF");
-    let mut c = window.add_cube(1.0, 0.2, 1.5); // Phone-like shape
-    c.set_color(1.0, 0.0, 0.0);
-
+    // Visualization setup
+    let mut window = Window::new("IMU Visualization");
     window.set_light(Light::StickToCamera);
 
+    let mut cube = window.add_cube(1.0, 0.2, 1.5); // Box shape
+    cube.set_color(0.0, 1.0, 1.0); // Cyan
+
+    // Madgwick filter setup
+    // Sample period: 20ms delay on Arduino -> ~50Hz -> 0.02s
+    let sample_period = 0.02f32;
+    let beta = 0.1f32;
+    let mut madgwick = Madgwick::new(sample_period, beta);
+
     while window.render() {
-        let rot = {
-            let r = rotation.lock().unwrap();
-            *r
-        };
-        // nalgebra quat to unit quat
-        c.set_local_rotation(rot);
+        // Process all pending messages
+        let mut latest_data = None;
+        loop {
+            match rx.try_recv() {
+                Ok(data) => latest_data = Some(data),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
+            }
+        }
+
+        if let Some(data) = latest_data {
+            let ax = data[0];
+            let ay = data[1];
+            let az = data[2];
+            // Convert Gyro from Deg/s to Rad/s
+            let gx = data[3].to_radians();
+            let gy = data[4].to_radians();
+            let gz = data[5].to_radians();
+
+            // Madgwick/ahrs uses nalgebra 0.32
+            let gyro_vec = Vector3::new(gx, gy, gz);
+            let accel_vec = Vector3::new(ax, ay, az);
+
+            // update_imu returns Result<&Quaternion<f32>, ...>
+            if let Ok(quat) = madgwick.update_imu(&gyro_vec, &accel_vec) {
+                // quat is nalgebra::Quaternion<f32> (0.32)
+
+                // convert to kiss3d::nalgebra::UnitQuaternion (0.30)
+                // Bridge manually via components
+                let k_quat = kiss3d::nalgebra::Quaternion::new(quat.w, quat.i, quat.j, quat.k);
+
+                // kiss3d's UnitQuaternion::from_quaternion takes just the quaternion
+                let k_unit_quat = kiss3d::nalgebra::UnitQuaternion::from_quaternion(k_quat);
+
+                cube.set_local_rotation(k_unit_quat);
+            }
+        }
     }
 
     Ok(())
-}
-
-fn parse_line(line: &str) -> Option<SensorData> {
-    // Format: "A,ax,ay,az,G,gx,gy,gz,M,mx,my,mz"
-    let parts: Vec<&str> = line.split(',').collect();
-    if parts.len() < 12 {
-        return None;
-    }
-
-    // Safety check basic tokens
-    if parts[0] != "A" || parts[4] != "G" || parts[8] != "M" {
-        return None;
-    }
-
-    let ax = parts[1].parse::<f64>().ok()?;
-    let ay = parts[2].parse::<f64>().ok()?;
-    let az = parts[3].parse::<f64>().ok()?;
-
-    let gx = parts[5].parse::<f64>().ok()?;
-    let gy = parts[6].parse::<f64>().ok()?;
-    let gz = parts[7].parse::<f64>().ok()?;
-
-    let mx = parts[9].parse::<f64>().ok()?;
-    let my = parts[10].parse::<f64>().ok()?;
-    let mz = parts[11].parse::<f64>().ok()?;
-
-    Some(SensorData {
-        ax,
-        ay,
-        az,
-        gx,
-        gy,
-        gz,
-        mx,
-        my,
-        mz,
-    })
 }

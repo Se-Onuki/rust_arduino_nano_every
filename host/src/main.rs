@@ -8,19 +8,20 @@ use std::thread;
 use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
-    // Find a serial port
+    // シリアルポートを検索
     let ports = serialport::available_ports().expect("No ports found!");
     if ports.is_empty() {
         eprintln!("No serial ports found.");
         return Ok(());
     }
 
-    // Attempt to find a USB port first
+    // USBポートを優先的に検索
     let port_info = ports
         .iter()
         .find(|p| matches!(p.port_type, serialport::SerialPortType::UsbPort(_)))
         .unwrap_or(&ports[0]);
 
+    // 最初の利用可能なポートを使用
     let port_name = &port_info.port_name;
     println!("Using serial port: {}", port_name);
 
@@ -28,19 +29,19 @@ fn main() -> anyhow::Result<()> {
         .timeout(Duration::from_millis(1000))
         .open()?;
 
-    // Use f32 for compatibility with kiss3d
+    // kiss3dとの互換性のためにf32を使用
     let (tx, rx) = channel::<[f32; 6]>();
 
-    // Serial reading thread
+    // シリアル読み取りスレッド
     thread::spawn(move || {
         let mut reader = BufReader::new(port);
-        // 6 floats * 4 bytes = 24 bytes
+        // float(4バイト) * 6 = 24バイト
         let mut buffer = [0u8; 24];
 
         loop {
-            // Try to read exactly 24 bytes
+            // 正確に24バイト読み取ることを試行
             if let Ok(()) = reader.read_exact(&mut buffer) {
-                // Parse floats (Little Endian)
+                // float変換 (リトルエンディアン)
                 let ax = f32::from_le_bytes(buffer[0..4].try_into().unwrap());
                 let ay = f32::from_le_bytes(buffer[4..8].try_into().unwrap());
                 let az = f32::from_le_bytes(buffer[8..12].try_into().unwrap());
@@ -48,7 +49,7 @@ fn main() -> anyhow::Result<()> {
                 let gy = f32::from_le_bytes(buffer[16..20].try_into().unwrap());
                 let gz = f32::from_le_bytes(buffer[20..24].try_into().unwrap());
 
-                // Print raw values to console as requested
+                // 要求通り、生の数値をコンソールに出力
                 println!(
                     "Ax:{:.3} Ay:{:.3} Az:{:.3} Gx:{:.3} Gy:{:.3} Gz:{:.3}",
                     ax, ay, az, gx, gy, gz
@@ -59,22 +60,22 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Visualization setup
+    // 可視化のセットアップ
     let mut window = Window::new("IMU Visualization");
     window.set_light(Light::StickToCamera);
 
-    let mut cube = window.add_cube(1.0, 0.2, 1.5); // Box shape
-    cube.set_color(0.0, 1.0, 1.0); // Cyan
+    let mut cube = window.add_cube(1.0, 0.2, 1.5); // 箱型
+    cube.set_color(0.0, 1.0, 1.0); // シアン
 
-    // Create a camera positioned further away
-    // ArcBall camera: eye, at
+    // カメラを少し離れた位置に作成
+    // ArcBallカメラ: eye(視点), at(注視点)
     let mut camera = kiss3d::camera::ArcBall::new(
-        kiss3d::nalgebra::Point3::new(0.0, 0.0, 4.0), // Eye position at z=4.0
-        kiss3d::nalgebra::Point3::origin(),           // Look at origin
+        kiss3d::nalgebra::Point3::new(0.0, 0.0, 4.0), // 視点位置 z=4.0
+        kiss3d::nalgebra::Point3::origin(),           // 原点を見る
     );
 
-    // Madgwick filter setup
-    // Sample period: 20ms delay on Arduino -> ~50Hz -> 0.02s
+    // Madgwickフィルタのセットアップ
+    // サンプリング周期: Arduinoの遅延20ms -> 約50Hz -> 0.02s
     let sample_period = 0.02f32;
     let beta = 0.1f32;
     let mut madgwick = Madgwick::new(sample_period, beta);
@@ -94,24 +95,24 @@ fn main() -> anyhow::Result<()> {
             let ax = data[0];
             let ay = data[1];
             let az = data[2];
-            // Convert Gyro from Deg/s to Rad/s
+            // ジャイロを Deg/s から Rad/s に変換
             let gx = data[3].to_radians();
             let gy = data[4].to_radians();
             let gz = data[5].to_radians();
 
-            // Madgwick/ahrs uses nalgebra 0.32
+            // Madgwick/ahrs は nalgebra 0.32 を使用
             let gyro_vec = Vector3::new(gx, gy, gz);
             let accel_vec = Vector3::new(ax, ay, az);
 
-            // update_imu returns Result<&Quaternion<f32>, ...>
+            // update_imu は Result<&Quaternion<f32>, ...> を返す
             if let Ok(quat) = madgwick.update_imu(&gyro_vec, &accel_vec) {
-                // quat is nalgebra::Quaternion<f32> (0.32)
+                // quat は nalgebra::Quaternion<f32> (0.32)
 
-                // convert to kiss3d::nalgebra::UnitQuaternion (0.30)
-                // Bridge manually via components
+                // kiss3d::nalgebra::UnitQuaternion (0.30) に変換
+                // コンポーネント経由で手動ブリッジ
                 let k_quat = kiss3d::nalgebra::Quaternion::new(quat.w, quat.i, quat.j, quat.k);
 
-                // kiss3d's UnitQuaternion::from_quaternion takes just the quaternion
+                // kiss3dのUnitQuaternion::from_quaternionはクォータニオンのみを受け取る
                 let k_unit_quat = kiss3d::nalgebra::UnitQuaternion::from_quaternion(k_quat);
 
                 cube.set_local_rotation(k_unit_quat);

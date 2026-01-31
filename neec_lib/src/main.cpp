@@ -9,10 +9,10 @@ Imu imu(&i2c);
 void setup() {
     Serial.begin(115200);
     
-    // I2C initialization
-    // No explicit init needed for this custom I2c class based on constructor
+    // I2Cの初期化
+    // このカスタムI2cクラスはコンストラクタで設定されるため、明示的な初期化は不要です
     
-    // IMU initialization
+    // IMUの初期化
     if (!imu.init()) {
         Serial.println("Failed to initialize IMU!");
         while (1);
@@ -24,8 +24,8 @@ void loop() {
     Vector3 gyro;
 
     if (imu.getAccelG(&accel) && imu.getGyroDps(&gyro)) {
-        // Send as binary (Little Endian floating point)
-        // 6 floats * 4 bytes = 24 bytes
+        // バイナリとして送信 (リトルエンディアン浮動小数点数)
+        // float(4バイト) * 6 = 24バイト
         float data[6];
         data[0] = accel.x;
         data[1] = accel.y;
@@ -37,5 +37,5 @@ void loop() {
         Serial.write((uint8_t*)data, sizeof(data));
     }
 
-    delay(20); // Approx 50Hz
+    delay(20); // およそ50Hzでの動作
 }

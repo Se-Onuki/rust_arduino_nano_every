@@ -12,7 +12,7 @@ bool Imu::init() {
         this->i2c->write(this->address, this->REG_ACCEL_CONFIG, this->VAL_ACCEL_CONFIG__16G) &&
         this->i2c->write(this->address, this->REG_ACCEL_CONFIG2, this->VAL_ACCEL_CONFIG2__420HZ) &&
         this->i2c->write(this->address, this->REG_PWR_MGMT_1, this->VAL_PWR_MGMT_1__LOW_NOISE))) return false;
-    constexpr uint8_t accelStartupMs = 20;  // Datasheet p.10
+    constexpr uint8_t accelStartupMs = 20;  // データシート p.10
     delay(accelStartupMs);
     return true;
 }

@@ -28,18 +28,17 @@ fn main() -> anyhow::Result<()> {
     let port = serialport::new(port_name, 115200)
         .timeout(Duration::from_millis(1000))
         .open()?;
-
     // kiss3dとの互換性のためにf32を使用
-    let (tx, rx) = channel::<[f32; 6]>();
+    let (tx, rx) = channel::<[f32; 9]>();
 
     // シリアル読み取りスレッド
     thread::spawn(move || {
         let mut reader = BufReader::new(port);
-        // float(4バイト) * 6 = 24バイト
-        let mut buffer = [0u8; 24];
+        // float(4バイト) * 9 = 36バイト
+        let mut buffer = [0u8; 36];
 
         loop {
-            // 正確に24バイト読み取ることを試行
+            // 正確に36バイト読み取ることを試行
             if let Ok(()) = reader.read_exact(&mut buffer) {
                 // float変換 (リトルエンディアン)
                 let ax = f32::from_le_bytes(buffer[0..4].try_into().unwrap());
@@ -48,14 +47,17 @@ fn main() -> anyhow::Result<()> {
                 let gx = f32::from_le_bytes(buffer[12..16].try_into().unwrap());
                 let gy = f32::from_le_bytes(buffer[16..20].try_into().unwrap());
                 let gz = f32::from_le_bytes(buffer[20..24].try_into().unwrap());
+                let mx = f32::from_le_bytes(buffer[24..28].try_into().unwrap());
+                let my = f32::from_le_bytes(buffer[28..32].try_into().unwrap());
+                let mz = f32::from_le_bytes(buffer[32..36].try_into().unwrap());
 
                 // 要求通り、生の数値をコンソールに出力
                 println!(
-                    "Ax:{:.3} Ay:{:.3} Az:{:.3} Gx:{:.3} Gy:{:.3} Gz:{:.3}",
-                    ax, ay, az, gx, gy, gz
+                    "A[{:>+7.2}, {:>+7.2}, {:>+7.2}] G[{:>+7.2}, {:>+7.2}, {:>+7.2}] M[{:>+7.2}, {:>+7.2}, {:>+7.2}]",
+                    ax, ay, az, gx, gy, gz, mx, my, mz
                 );
 
-                let _ = tx.send([ax, ay, az, gx, gy, gz]);
+                let _ = tx.send([ax, ay, az, gx, gy, gz, mx, my, mz]);
             }
         }
     });
@@ -91,6 +93,20 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
+        // シリアル読み取りスレッド
+        // ... (This part is handled by previous edit, but channel type definition is above it)
+        // Wait, the previous edit didn't change the channel definition line 32. I need to change that line too.
+        // I will encompass the channel definition in this call? No, it's far apart.
+        // I will use multi_replace.
+
+        // ...
+        // Using multi_replace is better. But I am in replace_file_content.
+        // I will abort this and use multi_replace for clearer dispersed edits.
+        // Wait, I already did the loop edit. I just need to fix channel def and the render loop.
+        // I will do the channel def and render loop update in this single replace if possible? No, they are far apart.
+        // I will do render loop first.
+
+        // ...
         if let Some(data) = latest_data {
             let ax = data[0];
             let ay = data[1];
@@ -99,13 +115,18 @@ fn main() -> anyhow::Result<()> {
             let gx = data[3].to_radians();
             let gy = data[4].to_radians();
             let gz = data[5].to_radians();
+            let mx = data[6];
+            let my = data[7];
+            let mz = data[8];
 
             // Madgwick/ahrs は nalgebra 0.32 を使用
             let gyro_vec = Vector3::new(gx, gy, gz);
             let accel_vec = Vector3::new(ax, ay, az);
+            let mag_vec = Vector3::new(mx, my, mz);
 
-            // update_imu は Result<&Quaternion<f32>, ...> を返す
-            if let Ok(quat) = madgwick.update_imu(&gyro_vec, &accel_vec) {
+            // 9軸フュージョン (update) を使用
+            // update returns Result<&Quaternion<f32>, ...>
+            if let Ok(quat) = madgwick.update(&gyro_vec, &accel_vec, &mag_vec) {
                 // quat は nalgebra::Quaternion<f32> (0.32)
 
                 // kiss3d::nalgebra::UnitQuaternion (0.30) に変換

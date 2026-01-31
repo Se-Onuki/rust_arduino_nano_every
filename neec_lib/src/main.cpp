@@ -22,17 +22,25 @@ void setup() {
 void loop() {
     Vector3 accel;
     Vector3 gyro;
+    Vector3 mag;
 
-    if (imu.getAccelG(&accel) && imu.getGyroDps(&gyro)) {
+    bool result = imu.getAccelG(&accel) 
+                && imu.getGyroDps(&gyro) 
+                && imu.getMagUT(&mag);
+
+    if (result) {
         // バイナリとして送信 (リトルエンディアン浮動小数点数)
-        // float(4バイト) * 6 = 24バイト
-        float data[6];
+        // float(4バイト) * 9 = 36バイト
+        float data[9];
         data[0] = accel.x;
         data[1] = accel.y;
         data[2] = accel.z;
         data[3] = gyro.x;
         data[4] = gyro.y;
         data[5] = gyro.z;
+        data[6] = mag.x;
+        data[7] = mag.y;
+        data[8] = mag.z;
         
         Serial.write((uint8_t*)data, sizeof(data));
     }

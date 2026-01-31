@@ -24,11 +24,17 @@ void loop() {
     Vector3 gyro;
 
     if (imu.getAccelG(&accel) && imu.getGyroDps(&gyro)) {
-        Serial.print(accel.x, 4); Serial.print(",");
-        Serial.print(accel.y, 4); Serial.print(",");
-        Serial.print(accel.z, 4); Serial.print(",");
-        Serial.print(gyro.x, 4); Serial.print(",");
-        Serial.print(gyro.y, 4); Serial.println(gyro.z, 4);
+        // Send as binary (Little Endian floating point)
+        // 6 floats * 4 bytes = 24 bytes
+        float data[6];
+        data[0] = accel.x;
+        data[1] = accel.y;
+        data[2] = accel.z;
+        data[3] = gyro.x;
+        data[4] = gyro.y;
+        data[5] = gyro.z;
+        
+        Serial.write((uint8_t*)data, sizeof(data));
     }
 
     delay(20); // Approx 50Hz

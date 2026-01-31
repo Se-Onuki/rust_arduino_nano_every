@@ -2,7 +2,7 @@ use ahrs::{Ahrs, Madgwick};
 use kiss3d::light::Light;
 use kiss3d::window::Window;
 use nalgebra::Vector3; // 0.32 for ahrs
-use std::io::{BufRead, BufReader};
+use std::io::{BufReader, Read};
 use std::sync::mpsc::{channel, TryRecvError};
 use std::thread;
 use std::time::Duration;
@@ -15,8 +15,13 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Use the first available port
-    let port_name = &ports[0].port_name;
+    // Attempt to find a USB port first
+    let port_info = ports
+        .iter()
+        .find(|p| matches!(p.port_type, serialport::SerialPortType::UsbPort(_)))
+        .unwrap_or(&ports[0]);
+
+    let port_name = &port_info.port_name;
     println!("Using serial port: {}", port_name);
 
     let port = serialport::new(port_name, 115200)
@@ -29,28 +34,27 @@ fn main() -> anyhow::Result<()> {
     // Serial reading thread
     thread::spawn(move || {
         let mut reader = BufReader::new(port);
-        let mut line = String::new();
+        // 6 floats * 4 bytes = 24 bytes
+        let mut buffer = [0u8; 24];
 
         loop {
-            line.clear();
-            if let Ok(bytes) = reader.read_line(&mut line) {
-                if bytes == 0 {
-                    continue;
-                }
-                let line = line.trim();
-                let parts: Vec<&str> = line.split(',').collect();
-                if parts.len() == 6 {
-                    if let (Ok(ax), Ok(ay), Ok(az), Ok(gx), Ok(gy), Ok(gz)) = (
-                        parts[0].parse::<f32>(),
-                        parts[1].parse::<f32>(),
-                        parts[2].parse::<f32>(),
-                        parts[3].parse::<f32>(),
-                        parts[4].parse::<f32>(),
-                        parts[5].parse::<f32>(),
-                    ) {
-                        let _ = tx.send([ax, ay, az, gx, gy, gz]);
-                    }
-                }
+            // Try to read exactly 24 bytes
+            if let Ok(()) = reader.read_exact(&mut buffer) {
+                // Parse floats (Little Endian)
+                let ax = f32::from_le_bytes(buffer[0..4].try_into().unwrap());
+                let ay = f32::from_le_bytes(buffer[4..8].try_into().unwrap());
+                let az = f32::from_le_bytes(buffer[8..12].try_into().unwrap());
+                let gx = f32::from_le_bytes(buffer[12..16].try_into().unwrap());
+                let gy = f32::from_le_bytes(buffer[16..20].try_into().unwrap());
+                let gz = f32::from_le_bytes(buffer[20..24].try_into().unwrap());
+
+                // Print raw values to console as requested
+                println!(
+                    "Ax:{:.3} Ay:{:.3} Az:{:.3} Gx:{:.3} Gy:{:.3} Gz:{:.3}",
+                    ax, ay, az, gx, gy, gz
+                );
+
+                let _ = tx.send([ax, ay, az, gx, gy, gz]);
             }
         }
     });
@@ -62,13 +66,20 @@ fn main() -> anyhow::Result<()> {
     let mut cube = window.add_cube(1.0, 0.2, 1.5); // Box shape
     cube.set_color(0.0, 1.0, 1.0); // Cyan
 
+    // Create a camera positioned further away
+    // ArcBall camera: eye, at
+    let mut camera = kiss3d::camera::ArcBall::new(
+        kiss3d::nalgebra::Point3::new(0.0, 0.0, 4.0), // Eye position at z=4.0
+        kiss3d::nalgebra::Point3::origin(),           // Look at origin
+    );
+
     // Madgwick filter setup
     // Sample period: 20ms delay on Arduino -> ~50Hz -> 0.02s
     let sample_period = 0.02f32;
     let beta = 0.1f32;
     let mut madgwick = Madgwick::new(sample_period, beta);
 
-    while window.render() {
+    while window.render_with_camera(&mut camera) {
         // Process all pending messages
         let mut latest_data = None;
         loop {

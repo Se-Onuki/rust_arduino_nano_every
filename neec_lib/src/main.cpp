@@ -45,5 +45,6 @@ void loop() {
         Serial.write((uint8_t*)data, sizeof(data));
     }
 
-    delay(20); // およそ50Hzでの動作
+
+    // delay(20); // 速度最適化のため削除
 }

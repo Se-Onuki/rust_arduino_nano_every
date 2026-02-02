@@ -27,11 +27,23 @@ Z: 上
 */
 
 /// IMUの座標系をMadgwick座標系に変換
+///
+/// # 引数
+/// * `imu_axis` - IMUの姿勢を表す配列
+///
+/// # 返り値
+/// * `Vector3<f32>` - Madgwickの姿勢を表すベクトル
 fn imu_to_madgwick(imu_axis: [f32; 3]) -> Vector3<f32> {
     Vector3::new(imu_axis[0], -imu_axis[2], imu_axis[1])
 }
 
 /// Madgwickの姿勢をKiss3dの座標系に変換
+///
+/// # 引数
+/// * `madgwick_quat` - Madgwickの姿勢を表すクォータニオン
+///
+/// # 返り値
+/// * `kiss3d::nalgebra::Quaternion<f32>` - Kiss3dの姿勢を表すクォータニオン
 fn madgwick_to_kiss3d(madgwick_quat: Quaternion<f32>) -> kiss3d::nalgebra::Quaternion<f32> {
     // Madgwick Frame (X=Right, Y=Back, Z=Up) -> Kiss3d Frame (X=Right, Y=Up, Z=Towards)
     // Mapping: X->X, Y->-Z, Z->Y
@@ -49,7 +61,7 @@ fn madgwick_to_kiss3d(madgwick_quat: Quaternion<f32>) -> kiss3d::nalgebra::Quate
 
 fn main() -> Result<()> {
     // シリアル通信の開始
-    // 戻り値: (受信チャネル, ポート名)
+    // 返り値: (受信チャネル, ポート名)
     // 利用可能なポートがない場合はエラー終了
     let (rx, port_name) = serial::spawn_serial_thread()?;
     println!("Started listening on {}", port_name);

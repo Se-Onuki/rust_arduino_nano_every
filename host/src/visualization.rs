@@ -8,20 +8,26 @@ use std::rc::Rc;
 
 /// ユーザーからの入力アクション
 pub enum UserAction {
+    // 入力なし
     None,
+    // リセット
     Reset,
 }
 
 /// 可視化とユーザー入力を管理する構造体
 pub struct ImuVisualizer {
+    // ウィンドウ
     window: Window,
+    // カメラ
     camera: kiss3d::camera::ArcBall,
+    // 3軸モデル
     axes_group: SceneNode,
+    // テキスト用フォント
     font: Rc<Font>,
 }
 
 impl ImuVisualizer {
-    /// 新しいVisualizerを作成し、ウィンドウと3軸モデルを初期化します。
+    /// 新しいVisualizerを作成し、ウィンドウと3軸モデルを初期化する
     pub fn new() -> Self {
         let mut window = Window::new("IMU Visualization");
         window.set_light(Light::StickToCamera);
@@ -61,7 +67,7 @@ impl ImuVisualizer {
         }
     }
 
-    /// ウィンドウを描画し、継続判定を返します。
+    /// ウィンドウを描画し継続判定を返す
     pub fn render(&mut self) -> bool {
         // Overlayの描画
         self.draw_overlay();
@@ -69,7 +75,7 @@ impl ImuVisualizer {
         self.window.render_with_camera(&mut self.camera)
     }
 
-    /// 画面上のオーバーレイ（テキスト）を描画します。
+    /// 画面上のオーバーレイ(テキスト)を描画する
     fn draw_overlay(&mut self) {
         self.window.draw_text(
             "RESET (R)",

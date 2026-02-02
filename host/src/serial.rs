@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 /// シリアル通信を管理し、データ受信スレッドを開始します。
 ///
-/// # Returns
+/// # 返り値
 ///
 /// * `anyhow::Result<(Receiver<([f32; 9], Instant)>, String)>` - データ受信チャネルとポート名、またはエラー
 pub fn spawn_serial_thread() -> anyhow::Result<(Receiver<([f32; 9], Instant)>, String)> {
@@ -52,13 +52,11 @@ pub fn spawn_serial_thread() -> anyhow::Result<(Receiver<([f32; 9], Instant)>, S
                 let my = f32::from_le_bytes(buffer[28..32].try_into().unwrap());
                 let mz = f32::from_le_bytes(buffer[32..36].try_into().unwrap());
 
-                // 生の数値をコンソールに出力 (デバッグ用、必要に応じてコメントアウト)
-                /*
+                // 生の数値をコンソールに出力 (デバッグ用)
                 println!(
                     "A[{:>+7.2}, {:>+7.2}, {:>+7.2}] G[{:>+7.2}, {:>+7.2}, {:>+7.2}] M[{:>+7.2}, {:>+7.2}, {:>+7.2}]",
                     ax, ay, az, gx, gy, gz, mx, my, mz
                 );
-                */
 
                 let _ = tx.send(([ax, ay, az, gx, gy, gz, mx, my, mz], now));
             } else {

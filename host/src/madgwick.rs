@@ -9,7 +9,13 @@ pub struct Madgwick {
 }
 
 impl Madgwick {
-    /// 指定されたゲインで新しいMadgwickインスタンスを作成します。
+    /// 指定されたゲインで新しいMadgwickインスタンスを作成する
+    ///
+    /// # 引数
+    /// * `beta` - ベータゲイン
+    ///
+    /// # 返り値
+    /// * `Madgwick` - Madgwickインスタンス
     pub fn new(beta: f32) -> Self {
         Self {
             beta,
@@ -17,12 +23,15 @@ impl Madgwick {
         }
     }
 
-    /// クォータニオンを初期状態（単位クォータニオン）にリセットします。
+    /// クォータニオンを初期状態（単位クォータニオン）にリセットする
+    ///
+    /// # 引数
+    /// * `self` - Madgwickインスタンス
     pub fn reset(&mut self) {
         self.quat = Quaternion::new(1.0, 0.0, 0.0, 0.0);
     }
 
-    /// 9軸データ（ジャイロ、加速度、磁気）と経過時間 dt でフィルタを更新します。
+    /// 9軸データ（ジャイロ、加速度、磁気）と経過時間 dt でフィルタを更新する
     ///
     /// # 引数
     ///
@@ -30,6 +39,9 @@ impl Madgwick {
     /// * `accel` - 加速度計データ (正規化の有無に関わらず、内部で正規化されます)
     /// * `mag` - 磁力計データ (正規化の有無に関わらず、内部で正規化されます)
     /// * `dt` - 前回の更新からの経過時間 (秒)
+    ///
+    /// # 返り値
+    /// * `Quaternion<f32>` - Madgwickの姿勢を表すクォータニオン
     pub fn update(
         &mut self,
         gyro: &Vector3<f32>,
@@ -63,7 +75,7 @@ impl Madgwick {
             let _4b1 = 4.0 * b.x;
             let _4b3 = 4.0 * b.z;
 
-            // 最急降下法(Madgwickの論文/ソースからの最適化が行われたもの｡)
+            // 最急降下法
             // f(q, a, b, m)
             // 目的関数の構成要素
             // let q1q1 = q.w * q.w; // 未使用
@@ -77,7 +89,7 @@ impl Madgwick {
             let q3q4 = q.j * q.k;
             let q4q4 = q.k * q.k;
 
-            // 明快さと正確さのために、ヤコビアン転置乗算を行ごとに使用して勾配を実装します。
+            // ヤコビアン転置乗算を行ごとに使用して勾配を実装
             // f_g (加速度部分)
             let f_g_x = 2.0 * (q2q4 - q1q3) - a.x;
             let f_g_y = 2.0 * (q1q2 + q3q4) - a.y;
@@ -89,7 +101,7 @@ impl Madgwick {
             let f_b_z = 2.0 * b.x * (q1q3 + q2q4) + 2.0 * b.z * (0.5 - q2q2 - q3q3) - m.z;
 
             // 勾配 s = J_g^T * f_g + J_b^T * f_b
-            // sの成分を直接計算します。
+            // sの成分を直接計算
 
             // J_g^T 部分
             // 1行目 (q.w に関して): [-2qy, 2qx, 0]
